@@ -7,8 +7,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library('caret')
 library('tidyverse')
-
-# install.packages(c('DMwR', 'ROSE'))
+#install.packages(c('DMwR', 'ROSE'))
 ```
 
 
@@ -227,6 +226,7 @@ dat
 
 Let's revisit the Default data set. "Yes" is a much smaller portion of the data. This imbalance will make it really difficult to predict this class. We would like to get an even balance of data in this case.
 ```{r}
+# CHECK DATA FOR BALANCE!!!!!!!!! BY PLOTTING!!!!!!!
 dat %>%
   group_by(default) %>%
   count() %>%
@@ -235,9 +235,19 @@ dat %>%
   geom_label(aes(label = scales::percent(n / sum(n))))
 ```
 
+```{r}
+# CHECK DATA FOR BALANCE!!!!!!!!! BY PLOTTING!!!!!!!
+dat_train %>%
+  group_by(default) %>%
+  count() %>%
+  ggplot(aes(x = default, y = n)) +
+  geom_col() + 
+  geom_label(aes(label = n))
+```
 
 Sampling Techniques
 ```{r}
+set.seed(123)
 dat_id = dat %>%
   mutate(id = row_number(),
          default = as.factor(default))
@@ -285,12 +295,16 @@ table(rose_train$default)
 
 Training...
 ```{r}
-# caret has a stronge thing... must have "Class" as the predicted variable
+# caret has a strange thing... must have "Class" as the predicted variable (BOOOOO!!!)
 dat_test = dat_test %>% rename(Class = default) %>% mutate(Class = as.factor(Class))
 dat_train = dat_train %>% rename(Class = default) %>% mutate(Class = as.factor(Class))
+
 down_train = down_train %>% select(-default) #rename(Class = default) %>% mutate(Class = as.factor(Class)) huh?
+
 up_train = up_train %>% select(-default) #rename(Class = default) %>% mutate(Class = as.factor(Class)) huh?
+
 smote_train = smote_train %>% rename(Class = default) %>% mutate(Class = as.factor(Class))
+
 rose_train = rose_train %>% rename(Class = default) %>% mutate(Class = as.factor(Class))
 
 

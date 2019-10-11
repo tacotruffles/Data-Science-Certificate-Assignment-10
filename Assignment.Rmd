@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library('caret')
 library('tidyverse')
 ```
 
@@ -22,8 +23,8 @@ Read about the data at <https://github.com/rfordatascience/tidytuesday/tree/mast
 ```{r}
 ramen_ratings <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-06-04/ramen_ratings.csv")
 
-dat = ramen_ratings %>%
-  mutate(review_from_usa = country == 'United States') %>%
+dat <- ramen_ratings %>%
+  mutate(review_from_usa = ifelse(country == 'United States', 1 , 0)) %>%
   select(-country)
 
 dat
@@ -34,20 +35,146 @@ dat
 
 # Begin EDA 
 
-```{r}
+In the 3180 Reviews there are:
 
+9 Styles (Packaging)
+456 Brands
+2971 Varieties
+
+```{r}
+summary(dat)
+
+(num_reviews <- nrow(dat))
+
+(num_brands <- dat %>%
+  group_by(brand) %>%
+  count() %>%
+  nrow())
+
+(num_varietes <- dat %>%
+  group_by(variety) %>%
+  count() %>%
+  nrow())
+
+(num_varietes <- dat %>%
+  group_by(style) %>%
+  count() %>%
+  nrow())
 ```
 
+It appears that more than half of the reviews are on "Pack" style Ramen production, with "Cup" and "Bowl" taking a far 2nd by making up approximately 30% of data reviews.
+```{r}
+dat %>%
+  ggplot() +
+  geom_bar(aes(x = style))
+```
+
+Wow...people just tend to like Ramen!
+```{r}
+dat %>%
+  ggplot() +
+  geom_bar(aes(x = stars))
+```
+
+Now let's see much the imbalances in our data set for reviews...
+We're finding that there are a lot of non-US reviews in the data to begin with: 88%. 
+Sub sampling is definitely a candidate to balance out our data. 
+Up sampling is my gut feeling for the k-fold validation process
+```{r}
+dat %>%
+  group_by(review_from_usa) %>%
+  count() %>%
+  ggplot(aes(x = review_from_usa, y = n)) +
+  geom_col() +
+  geom_label(aes(label = scales::percent(n / sum(n))))
+```
 
 # Expore NA values
 Show how many `NA` there are and how to interpret these `NA` values, explain what you will do with them.
-< Answer Here >
+There's such a small number in the data set that, we'll just remove all rows with NAs. We're left with only 17 less observations: 3163. And since we're going to do up sampling...in the scheme of things, these 17 removed observations will not skew our data.
 ```{r}
+nrow(dat)
 colSums(is.na(dat))
+dat <- dat %>% drop_na()
+nrow(dat)
 ```
 
-...clean, wrangle, filter, etc. ...
+### ...clean, wrangle, filter, etc. ...
+With the NA's removed from the ramen data, we're already in a pretty good shape...all that's left is to remove the "review_number" and "id" columns, during the Train/Test split process below as it is not data that correlates with our model. A 70/30 split on the data will work for our purposes
+```{r}
+train_sample_size = floor(nrow(dat) * .7)
+set.seed(123)
+dat_id <- dat %>%
+  mutate(id = row_number(), # not sure if review_number is unique so we'll just generate our own
+         review_from_usa = as.factor(review_from_usa))
 
-...build a model...
+dat_train <- dat_id %>%
+  sample_n(train_sample_size)
 
-...explain your results...
+dat_test <- dat_id %>%
+  anti_join(dat_train, by = 'review_number')
+
+dat_train <- dat_train %>%
+  select(-review_number, -id) # remove our id and the review_numbrer columns as they aren't needed in the model
+
+nrow(dat_train)
+nrow(dat_test)
+head(dat_train)
+```
+
+Now Let's Up Sample our data to balance it for Training the model
+Upsample
+```{r}
+up_train <- upSample(x = dat_train[, -ncol(dat_train)],
+                         y = dat_train$review_from_usa)
+table(up_train$review_from_usa) # Why table of extent 0?
+
+summary(up_train)
+head(up_train)
+```
+We ended up with 3876 rows of Training data! Up from the 2214 we got from out 70% randomized split! 
+SOMETHING WEIRD THOUGH: review_from_usa got changed to "Class"...a conversion I tought we had to do later???!
+Out data is now balanced!
+```{r}
+up_train %>%
+  group_by(Class) %>%
+  count()
+```
+
+### ...build a model...
+```{r}
+# K-FOLD CROSS-VALIDATION PARAMTERS
+# Parameters
+train_control = trainControl(
+    method = "cv", number = 5, verboseIter = TRUE
+  )
+```
+
+Now let's train with our UPSAMPLED training data
+```{r}
+# TRAIN
+data_to_use = up_train
+
+View(up_train)
+
+model = train(
+  Class ~ ., 
+  data = data_to_use,
+  method = "glm",
+  family = "binomial",
+  trControl = train_control
+)
+
+# TEST
+predictions = predict(model, newdata = dat_test, type = 'raw')
+actuals = dat_test$Class
+confusionMatrix(predictions, actuals)
+```
+
+
+
+### ...explain your results...
+```{r}
+summary(model)
+```
+
